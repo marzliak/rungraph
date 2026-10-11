@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="580" viewBox="0 0 1120 580" role="img" aria-labelledby="title desc">
+  <title id="title">Keep Hermes and its Claude Code children in one execution graph</title>
+  <desc id="desc">Conceptual comparison using synthetic labels. Left: independent Hermes and Claude Code runs without parent links. Right: one Hermes parent connected to a native child and two persisted Claude Code children, with running and completed states.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#818cf8"/></marker>
+  </defs>
+  <rect width="1120" height="580" rx="20" fill="#0b1120"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="36" y="48" fill="#f8fafc" font-size="27" font-weight="700">One task. See the whole agent family.</text>
+    <text x="36" y="78" fill="#a5b4fc" font-size="16">Hermes orchestration + persisted Claude Code workers</text>
+    <rect x="28" y="105" width="400" height="412" rx="14" fill="#111b2e" stroke="#334155"/>
+    <rect x="448" y="105" width="644" height="412" rx="14" fill="#111b2e" stroke="#6366f1"/>
+    <text x="52" y="142" fill="#94a3b8" font-size="13" font-weight="700" letter-spacing="1">WITHOUT EXPLICIT LINKS</text>
+    <text x="472" y="142" fill="#c7d2fe" font-size="13" font-weight="700" letter-spacing="1">WITH THIS FORK + LAUNCH REGISTRATION</text>
+    <g fill="#18253c" stroke="#475569">
+      <rect x="52" y="170" width="352" height="80" rx="10"/>
+      <rect x="52" y="278" width="352" height="80" rx="10"/>
+      <rect x="52" y="386" width="352" height="80" rx="10"/>
+    </g>
+    <g fill="#f1f5f9" font-size="19" font-weight="700">
+      <text x="72" y="201">Hermes parent</text><text x="72" y="309">Claude Code worker A</text><text x="72" y="417">Claude Code worker B</text>
+    </g>
+    <g fill="#94a3b8" font-size="15">
+      <text x="72" y="228">One run in the index</text><text x="72" y="336">Another independent run</text><text x="72" y="444">No parent link recorded</text>
+    </g>
+    <rect x="472" y="170" width="596" height="80" rx="10" fill="#23315a" stroke="#818cf8"/>
+    <text x="492" y="201" fill="#f8fafc" font-size="20" font-weight="700">Hermes parent</text>
+    <text x="492" y="227" fill="#c7d2fe" font-size="15">Your chosen model · family visible from this run</text>
+    <path d="M770 250 V286 H570 V318" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M770 286 V318" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M770 286 H970 V318" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <g fill="#18253c" stroke="#475569">
+      <rect x="472" y="322" width="188" height="134" rx="10"/>
+      <rect x="676" y="322" width="188" height="134" rx="10"/>
+      <rect x="880" y="322" width="188" height="134" rx="10"/>
+    </g>
+    <g fill="#f1f5f9" font-size="17" font-weight="700">
+      <text x="488" y="353">Native child</text><text x="692" y="353">Claude Code A</text><text x="896" y="353">Claude Code B</text>
+    </g>
+    <g fill="#94a3b8" font-size="14">
+      <text x="488" y="380">Hermes runtime</text><text x="692" y="380">Persisted CLI run</text><text x="896" y="380">Persisted CLI run</text>
+    </g>
+    <rect x="488" y="400" width="99" height="28" rx="14" fill="#163b32"/><text x="502" y="419" fill="#86efac" font-size="13">completed</text>
+    <rect x="692" y="400" width="84" height="28" rx="14" fill="#49331a"/><text x="706" y="419" fill="#fcd34d" font-size="13">running</text>
+    <rect x="896" y="400" width="99" height="28" rx="14" fill="#163b32"/><text x="910" y="419" fill="#86efac" font-size="13">completed</text>
+    <text x="472" y="490" fill="#c7d2fe" font-size="15">Inspect a child, open its run, then return to the parent.</text>
+    <text x="36" y="550" fill="#94a3b8" font-size="14">Conceptual illustration with synthetic labels, not a screenshot or user transcript.</text>
+  </g>
+</svg>

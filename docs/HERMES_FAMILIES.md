@@ -2,6 +2,57 @@
 
 This downstream adaptation preserves the upstream graph and transcript adapters and adds an optional observer integration. Model choice and runtime identity are separate: a Hermes run can own native children and persisted Claude Code processes, even when they use different models.
 
+## Connect new Claude Code workers
+
+The viewer and launcher must read/write the **same private registry directory**.
+This example uses your home directory, not a system-wide CLI replacement.
+
+From the root of your cloned fork, start the observer:
+
+```bash
+export RUNGRAPH_LINKS_DIR="$HOME/.local/state/rungraph/links"
+mkdir -p "$RUNGRAPH_LINKS_DIR"
+chmod 700 "$RUNGRAPH_LINKS_DIR"
+node bin/rungraph.js serve --no-open
+```
+
+Then, in the Hermes tool environment that launches a worker, call the launcher
+instead of calling the Claude binary directly:
+
+```bash
+# Set this to the absolute path of YOUR cloned fork.
+RUNGRAPH_CHECKOUT="/path/to/rungraph"
+export RUNGRAPH_LINKS_DIR="$HOME/.local/state/rungraph/links"
+export RUNGRAPH_CLAUDE_REAL="$(command -v claude)"
+export RUNGRAPH_TASK_LABEL="Review tests"
+python3 "$RUNGRAPH_CHECKOUT/scripts/rungraph-claude-launch.py" \
+  --print "Review the tests in the current project. Do not edit files."
+```
+
+The second command makes a real Claude Code call and may incur your usual model
+costs. Use a harmless task in your own project. `HERMES_SESSION_ID` must already
+identify the real parent in the inherited tool environment; **do not invent a
+parent ID** to make a graph look connected. Without that value the launcher
+passes the call through without recording a link.
+
+`RUNGRAPH_CLAUDE_REAL` must point to the original executable, not to this launcher
+or a wrapper that calls it. Set it before configuring any optional PATH shim.
+You do not need root access or to replace a package-owned symlink for this direct
+invocation. The launcher preserves stdout/stderr, arguments, signals and terminal
+exit status, but adds an exact child UUID when needed for registration.
+
+Open the Hermes parent in the WebUI. A registered child can appear as a connected
+placeholder before its persisted transcript is available. Once discovered, its
+content becomes inspectable; the child also remains an independent run with a
+parent navigation link. The Hermes filter changes the run list, not the parent's
+composed family. For older branches in a long graph, press `f` to fit the graph.
+
+Only future calls routed through the launcher are registered by this setup.
+Interactive calls, `--continue`, ambiguous resumes and
+`--no-session-persistence` calls are not linked. Stop invoking the launcher to
+stop creating links; keep existing records private and decide their retention
+separately. Stop the viewer with Ctrl+C. Neither step stops existing worker tasks.
+
 ## Explicit launch registration
 
 `scripts/rungraph-claude-launch.py` can be invoked by an optional local CLI shim. Set `RUNGRAPH_CLAUDE_REAL` to the real Claude executable (not the shim) and `RUNGRAPH_LINKS_DIR` to a private metadata directory; configure the observer with the same registry directory.

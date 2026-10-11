@@ -1,19 +1,55 @@
-# rungraph
+# RunGraph for Hermes agent families
 
-> **Hermes execution-family integration:** this public fork extends
-> [upstream RunGraph v0.8.1](https://github.com/fayzan123/rungraph) with explicit
-> Hermes → Claude Code parent/child graphs, cross-runtime navigation, model
-> labels, and evidence-backed execution state. It preserves the upstream
-> transcript adapters and does not change your agent's model or provider.
->
-> See [docs/HERMES_FAMILIES.md](docs/HERMES_FAMILIES.md) for the optional launcher,
-> registry setup, exclusions, and observation limits. This integration is not
-> yet part of the upstream npm package; `npx rungraph` below runs upstream.
+**See the agents your agent called, together in one graph.**
 
-### Run this fork
+[![CI](https://github.com/marzliak/rungraph/actions/workflows/ci.yml/badge.svg?branch=homolog)](https://github.com/marzliak/rungraph/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Requires **Node.js ≥ 22.13** for Hermes SQLite support and **Python 3** for the
-optional Claude launcher/import utility.
+[Quick start](#quick-start) · [Setup and limits](docs/HERMES_FAMILIES.md) · [Português](docs/README.pt-BR.md) · [Share this project](docs/SHARE.md)
+
+Your Hermes agent launches several Claude Code workers. They do the work, but
+independent run entries don't tell you which parent launched them. You end up
+switching filters and opening sessions one at a time.
+
+This fork adds explicit parent/child links for those persisted launches. Open the
+Hermes parent and see its native children and registered Claude Code workers in
+the same execution graph, even when they use different models.
+
+![Conceptual comparison: independent Hermes and Claude Code runs become one connected parent/child family after explicit launch registration.](docs/family-overview.svg)
+
+*Illustration with synthetic labels. It is not a screenshot or a user transcript.*
+
+## What this fork adds
+
+| Without the integration | With this fork and launch registration |
+|---|---|
+| External Claude Code workers appear as separate runs | Workers appear connected to their Hermes parent; standalone runs still exist |
+| Selecting Hermes doesn't establish a link to an external worker | Open the parent under the Hermes filter and keep its registered children in view |
+| Recent transcript activity can be mistaken for execution | `running` requires runtime evidence; missing evidence becomes `unknown` |
+| A new worker has no transcript yet | A connected placeholder remains visible until the transcript is discovered |
+
+You can inspect a child, see its requested model when recorded, open its own run,
+and navigate back to its parent. You don't need to change the parent's model or
+provider. This is an observer integration, not a new agent orchestrator.
+
+### Is it still running?
+
+The integration separates activity from evidence:
+
+- `running`: verified process/worker evidence or a verified running linked child.
+- `completed` / `error`: a recorded terminal outcome, where available.
+- `unknown`: missing, stale or contradictory runtime evidence.
+- `recent`: transcript recency without execution proof; it is not a live claim.
+
+A quiet transcript alone doesn't prove that work finished. Process checks use
+Linux `/proc`, including process start time and boot identity, to avoid mistaking
+a recycled PID for the original worker. On platforms without that evidence,
+execution state can remain `unknown`.
+
+## Quick start
+
+Use **Node.js ≥ 22.13** for Hermes SQLite support. The optional launcher also
+requires **Python ≥ 3.10** and your existing Claude Code installation.
 
 ```bash
 git clone --branch homolog https://github.com/marzliak/rungraph.git
@@ -23,16 +59,51 @@ npm run build
 node bin/rungraph.js
 ```
 
-Reading native transcripts works without the optional launcher. Linking new
-external Claude Code children requires explicit launch registration as described
-in the integration guide. Commands without persistence or an exact parent
-identity are not linked. The WebUI composes execution families; upstream CLI/MCP
-parsing remains native. Keep the observer local or behind your own authentication:
-transcripts and registry metadata are private, even though this source is public.
+This opens the local viewer. To connect new external workers, follow the
+[launcher and registry setup](docs/HERMES_FAMILIES.md#connect-new-claude-code-workers).
+Just installing the viewer does **not** retroactively establish their parentage.
 
-Credit and the MIT license remain with the original project. The upstream
-introduction below describes its base features; the public demo is upstream data,
-not sessions from this fork's deployment.
+**`npx rungraph` installs the upstream npm package, not this fork's integration.**
+Use the source checkout above for these additions.
+
+## Scope and privacy
+
+- The WebUI composes families using exact session IDs. It doesn't infer ownership
+  from task names or timestamps. CLI/MCP parsing retains its upstream native scope.
+- The optional launcher links persisted headless `claude -p` / `--print` runs
+  with a valid inherited `HERMES_SESSION_ID`. Interactive runs, anonymous calls
+  and `--no-session-persistence` transports pass through without links.
+- Existing unregistered external runs stay independent. Historical import requires
+  the specific launcher ledger and exact proof; it is not general auto-discovery.
+- Registry files omit task prompts but contain private metadata, including
+  session IDs, labels and working directories. Keep them and transcripts private.
+- The viewer is local by default. Don't expose it publicly without your own
+  authentication and network controls. Publishing this source does not publish
+  your agent conversations.
+
+See [the integration guide](docs/HERMES_FAMILIES.md) for exclusions and setup,
+and [SECURITY.md](SECURITY.md) before sharing a run or reporting a security issue.
+
+## Try it and share what breaks
+
+If you use Hermes with external Claude Code workers, try this fork with a small
+local task. Report reproducible problems in
+[Issues](https://github.com/marzliak/rungraph/issues); don't attach raw transcripts
+or private registry files. A useful report names the versions, expected behavior
+and a sanitized example.
+
+If this solves a problem for you, **star the repo** so you can find it again.
+[Short English and Portuguese descriptions](docs/SHARE.md) are ready to share.
+
+## Built on RunGraph
+
+This is a focused fork of [Fayzan Malik's RunGraph](https://github.com/fayzan123/rungraph),
+based on upstream v0.8.1. The original graph viewer, transcript adapters and MIT
+license remain credited to that project. These additions are not an upstream
+release and do not imply endorsement by the original author.
+
+The sections below describe the upstream features. Its interactive demo and GIF
+use upstream data and do **not** demonstrate this fork's execution-family feature.
 
 **Ask your agent what happened. Watch the graph answer.**
 [fayzan123.github.io/rungraph](https://fayzan123.github.io/rungraph/) embeds a
