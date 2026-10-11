@@ -63,7 +63,7 @@ function byRecency(a, b) {
  *   not — no reordering jitter when the filter toggles). `live` counts the
  *   *matching* runs that are active.
  */
-export function groupRuns(runs, { filter, query } = {}) {
+export function groupRuns(runs, { filter, query, isLive = (r) => Boolean(r.active) } = {}) {
   const needle = typeof query === 'string' ? query.trim().toLowerCase() : '';
   const narrowed = Boolean(filter) || needle.length > 0;
   const ordered = [...(runs ?? [])].sort(byRecency);
@@ -91,7 +91,7 @@ export function groupRuns(runs, { filter, query } = {}) {
     if (filter && r.adapter !== filter) continue;
     if (needle && !String(r.title ?? '').toLowerCase().includes(needle)) continue;
     g.runs.push(r);
-    if (r.active) g.live += 1;
+    if (isLive(r)) g.live += 1;
   }
   const out = [];
   for (const { casings, ...g } of groups.values()) {
@@ -118,7 +118,7 @@ export function groupRuns(runs, { filter, query } = {}) {
  *
  * @returns {Array<{ adapter: string, name: string, count: number, live: boolean }>}
  */
-export function adapterChips(runs) {
+export function adapterChips(runs, { isLive = (r) => Boolean(r.active) } = {}) {
   const byAdapter = new Map();
   for (const r of runs ?? []) {
     if (!byAdapter.has(r.adapter)) {
@@ -131,7 +131,7 @@ export function adapterChips(runs) {
     }
     const chip = byAdapter.get(r.adapter);
     chip.count += 1;
-    if (r.active) chip.live = true;
+    if (isLive(r)) chip.live = true;
   }
   return [...byAdapter.values()].sort(
     (a, b) => b.count - a.count || (a.adapter < b.adapter ? -1 : a.adapter > b.adapter ? 1 : 0),

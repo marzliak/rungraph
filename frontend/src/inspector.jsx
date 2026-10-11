@@ -5,6 +5,7 @@ import { SIGNAL_GLYPHS } from './strip.jsx';
 import { adapterName, compactPath, filesIndex, rankedFocusNodes, relPath, signalsForNode } from './focus.js';
 import { firstFutureCall } from './replay.js';
 import { suggestQuestions } from './suggest.js';
+import { childRuntimeOfNode, runtimeLabel } from './runtime.js';
 import { coverageStats, unknownTypeSummary } from '../../src/coverage.js';
 
 /**
@@ -24,6 +25,7 @@ export function Inspector({
   graph,
   open: paneOpen = true,
   runId,
+  listedIds,
   project,
   selection,
   focus,
@@ -46,6 +48,7 @@ export function Inspector({
             <NodeDetail
               graph={graph}
               runId={runId}
+              listedIds={listedIds}
               project={project}
               nodeId={selection.id}
               focus={focus}
@@ -415,6 +418,7 @@ const SETTLE_FETCH_MS = 250;
 function NodeDetail({
   graph,
   runId,
+  listedIds,
   project,
   nodeId,
   focus,
@@ -426,6 +430,9 @@ function NodeDetail({
   onFocusFile,
 }) {
   const node = graph.nodes.find((n) => n.id === nodeId);
+  // An agent node's child execution, when the server proved one. Absent on
+  // every other node and on older servers — then nothing is shown.
+  const childRt = node ? childRuntimeOfNode(node) : null;
   // The detail remembers WHICH node (and which run — ids repeat across runs)
   // it belongs to, so a transcript can outlive its node's selection as the
   // stale body, and the fresh/stale decision is a comparison, not a flag
@@ -538,6 +545,22 @@ function NodeDetail({
         <dt>status</dt>
         <dd data-status={status}>{status}</dd>
         {node.model && (<><dt>model</dt><dd>{node.model}</dd></>)}
+        {childRt && (
+          <>
+            <dt>child run</dt>
+            <dd data-runtime={childRt.state} title="the execution this agent node dispatched">
+              {runtimeLabel(childRt.state)}
+              {childRt.childRunId && listedIds?.has(childRt.childRunId) && (
+                <>
+                  {' '}
+                  <button class="ghost" onClick={() => onOpenRun?.(childRt.childRunId)}>
+                    open →
+                  </button>
+                </>
+              )}
+            </dd>
+          </>
+        )}
         {node.tokens && (
           <>
             <dt>tokens</dt>

@@ -9,6 +9,16 @@ import { matchNodes } from './find.js';
 import { buildBundle, loadBundleFile, bundleRunEntry, defaultBundleName, defaultSharedBy } from './bundle.js';
 import { liveServers } from './registry.js';
 import { launchTerminal } from './launch.js';
+import { composeRuntime, evaluateLink, readLinks } from './runtime.js';
+
+/**
+ * How often a WATCHED local run re-checks its runtime evidence (external child
+ * process identity, the Hermes worker journal). A tick reads the links registry
+ * and the parent's own journal only; it re-scans the corpus only when that
+ * evidence changed, or once a minute while a linked child is still unseen.
+ */
+const RUNTIME_TICK_MS = 3000;
+const PENDING_RESCAN_TICKS = 20;
 
 const DIST_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const HOST = '127.0.0.1'; // privacy: never bind anything else
@@ -110,6 +120,7 @@ export async function startServer(opts = {}) {
     close: () =>
       new Promise((resolve) => {
         for (const w of state.watches.values()) {
+          clearInterval(w.ticker);
           w.watcher?.close(); // bundle runs are static — no watcher behind them
           for (const c of w.clients) c.end();
         }
@@ -215,9 +226,46 @@ async function loadGraph(state, runId) {
     const b = state.bundles.get(runId);
     return b ? { ir: b.ir, details: b.details } : null;
   }
-  const ref = await resolveRun(state, runId);
+  const { runs } = await scan({ project: state.project });
+  const ref = runs.find((r) => r.runId === runId);
   if (!ref) return null;
-  return parseCached(state, ref);
+  return composeFor(state, ref, runs, await parseCached(state, ref));
+}
+
+/**
+ * The cross-runtime composition for one local run: its own parsed IR (the
+ * cache) with linked external children attached and native agents annotated.
+ * `runs` is the same scan the ref came from, so child resolution is exact.
+ */
+async function composeFor(state, ref, runs, parsed) {
+  const { links } = await readLinks();
+  return composeRuntime({
+    parent: ref,
+    parentIR: parsed.ir,
+    parentDetails: parsed.details,
+    runs,
+    links,
+    parseRef: (r) => parseCached(state, r),
+  });
+}
+
+/**
+ * The runtime evidence a watched run's graph depends on, as a comparable
+ * string. Cheap by construction: link records plus the parent's own activity,
+ * never a corpus scan.
+ */
+async function runtimeSignature(ref) {
+  const { links } = await readLinks();
+  const ctx = {};
+  const mine = [];
+  for (const l of links) {
+    if (l.parentSessionId !== ref.sessionId) continue;
+    const rt = await evaluateLink(l, ctx);
+    mine.push([l.linkId, rt.state, rt.reason ?? '']);
+  }
+  const adapter = ADAPTERS.find((a) => a.name === ref.adapter);
+  const act = adapter?.activity ? await adapter.activity(ref, {}) : null;
+  return JSON.stringify({ act: act?.state ?? null, reason: act?.reason ?? null, links: mine });
 }
 
 async function parseCached(state, ref) {
@@ -588,23 +636,37 @@ async function apiWatch(req, res, state, runId) {
 
   let entry = state.watches.get(runId);
   if (!entry) {
-    entry = { watcher: null, clients: new Set(), lastIR: bundle?.ir ?? null, lastConnectedAt: 0 };
+    entry = {
+      watcher: null,
+      ticker: null,
+      clients: new Set(),
+      lastIR: bundle?.ir ?? null,
+      lastConnectedAt: 0,
+      ref,
+      sig: null,
+      tick: 0,
+      pendingChildren: false,
+      queue: Promise.resolve(),
+    };
     state.watches.set(runId, entry);
     if (!bundle) {
       const adapter = ADAPTERS.find((a) => a.name === ref.adapter);
+      // Publishes are serialized per watch: a file event and a runtime tick
+      // can land together, and two composed graphs must not interleave.
+      const enqueue = (fn) => {
+        entry.queue = entry.queue.then(fn).catch(() => {});
+      };
       entry.watcher = watchRun(ref, adapter, {
         onGraph(ir, details) {
           state.parseCache.set(runId, { key: 'live', ir, details });
-          const delta = diffGraphs(entry.lastIR, ir);
-          entry.lastIR = ir;
-          if (!delta) return;
-          const payload = `data: ${JSON.stringify(delta)}\n\n`;
-          for (const client of entry.clients) client.write(payload);
+          enqueue(() => publishLive(state, runId, entry, ir, details));
         },
         onError() {}, // transient mid-write states; next event retries
       });
+      entry.ticker = setInterval(() => enqueue(() => runtimeTick(state, runId, entry)), RUNTIME_TICK_MS);
     }
   }
+  entry.ref = ref ?? entry.ref;
 
   entry.clients.add(res);
   entry.lastConnectedAt = Date.now();
@@ -629,10 +691,60 @@ async function apiWatch(req, res, state, runId) {
     clearInterval(heartbeat);
     entry.clients.delete(res);
     if (entry.clients.size === 0) {
+      clearInterval(entry.ticker);
       entry.watcher?.close();
       state.watches.delete(runId);
     }
   });
+}
+
+/** Fan a composed graph out as the delta against what the watch last sent. */
+function emitComposed(entry, ir) {
+  const delta = diffGraphs(entry.lastIR, ir);
+  entry.lastIR = ir;
+  if (!delta) return;
+  const payload = `data: ${JSON.stringify(delta)}\n\n`;
+  for (const client of entry.clients) client.write(payload);
+}
+
+/** A file event on the run: compose the watcher's fresh parse with its links. */
+async function publishLive(state, runId, entry, ir, details) {
+  const { runs } = await scan({ project: state.project });
+  const ref = runs.find((r) => r.runId === runId) ?? entry.ref;
+  if (!ref) return;
+  entry.ref = ref;
+  const composed = await composeFor(state, ref, runs, { ir, details });
+  entry.sig = await runtimeSignature(ref);
+  entry.pendingChildren = composed.ir.nodes.some((n) => n.ext?.runtime?.childAvailable === false);
+  entry.linkedCount = composed.ir.meta.ext?.runtime?.linkedChildren ?? 0;
+  emitComposed(entry, composed.ir);
+}
+
+/**
+ * The runtime-only path: a parent with no new messages still has a changing
+ * truth (its worker stopped, a child process ended). Republish only on a
+ * signature change, or once a minute while a linked child has no transcript yet.
+ */
+async function runtimeTick(state, runId, entry) {
+  if (!entry.ref || entry.clients.size === 0) return;
+  entry.tick++;
+  const sig = await runtimeSignature(entry.ref);
+  // Linked children grow in their own transcripts, which the parent's watcher
+  // never sees. A linked run is therefore re-composed on a slow cadence (one
+  // corpus scan per RUNTIME_TICK_MS * PENDING_RESCAN_TICKS / 2 while watched);
+  // diffGraphs suppresses the publish when nothing actually changed.
+  const linkedDue = entry.linkedCount > 0 && entry.tick % (PENDING_RESCAN_TICKS / 2) === 0;
+  const due = (entry.pendingChildren && entry.tick % PENDING_RESCAN_TICKS === 0) || linkedDue;
+  if (sig === entry.sig && !due) return;
+  entry.sig = sig;
+  const { runs } = await scan({ project: state.project });
+  const ref = runs.find((r) => r.runId === runId);
+  if (!ref) return;
+  entry.ref = ref;
+  const composed = await composeFor(state, ref, runs, await parseCached(state, ref));
+  entry.pendingChildren = composed.ir.nodes.some((n) => n.ext?.runtime?.childAvailable === false);
+  entry.linkedCount = composed.ir.meta.ext?.runtime?.linkedChildren ?? 0;
+  emitComposed(entry, composed.ir);
 }
 
 async function serveStatic(res, path) {

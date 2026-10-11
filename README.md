@@ -1,5 +1,39 @@
 # rungraph
 
+> **Hermes execution-family integration:** this public fork extends
+> [upstream RunGraph v0.8.1](https://github.com/fayzan123/rungraph) with explicit
+> Hermes → Claude Code parent/child graphs, cross-runtime navigation, model
+> labels, and evidence-backed execution state. It preserves the upstream
+> transcript adapters and does not change your agent's model or provider.
+>
+> See [docs/HERMES_FAMILIES.md](docs/HERMES_FAMILIES.md) for the optional launcher,
+> registry setup, exclusions, and observation limits. This integration is not
+> yet part of the upstream npm package; `npx rungraph` below runs upstream.
+
+### Run this fork
+
+Requires **Node.js ≥ 22.13** for Hermes SQLite support and **Python 3** for the
+optional Claude launcher/import utility.
+
+```bash
+git clone --branch homolog https://github.com/marzliak/rungraph.git
+cd rungraph
+npm ci
+npm run build
+node bin/rungraph.js
+```
+
+Reading native transcripts works without the optional launcher. Linking new
+external Claude Code children requires explicit launch registration as described
+in the integration guide. Commands without persistence or an exact parent
+identity are not linked. The WebUI composes execution families; upstream CLI/MCP
+parsing remains native. Keep the observer local or behind your own authentication:
+transcripts and registry metadata are private, even though this source is public.
+
+Credit and the MIT license remain with the original project. The upstream
+introduction below describes its base features; the public demo is upstream data,
+not sessions from this fork's deployment.
+
 **Ask your agent what happened. Watch the graph answer.**
 [fayzan123.github.io/rungraph](https://fayzan123.github.io/rungraph/) embeds a
 real run you can click around.

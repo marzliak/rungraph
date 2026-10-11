@@ -126,6 +126,41 @@ body {
   border-radius: 999px;
   padding: 2px 9px 2px 7px;
 }
+/* Runtime states other than proven-live: the same pill, quieter. `recent` is
+   deliberately not amber — it is recency, not proof of execution. */
+.badge-runtime {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.badge-runtime[data-tone="failed"] { color: var(--clay); border-color: color-mix(in oklch, var(--clay) 45%, transparent); }
+.badge-runtime[data-tone="unknown"] { color: var(--ink-faint); border-style: dashed; }
+.family-line {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34ch;
+}
+.parent-link { flex: none; font-family: var(--mono); font-size: 10.5px; }
+.rt-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+.rt-tag[data-tone="failed"] { color: var(--clay); }
+.rt-tag[data-tone="unknown"] { color: var(--ink-faint); font-style: italic; }
+.rt-tag.live { color: var(--amber); }
 .badge-live::before {
   content: "";
   width: 6px;

@@ -5,6 +5,7 @@ import * as codex from './adapters/codex/index.js';
 import * as hermes from './adapters/hermes/index.js';
 import * as opencode from './adapters/opencode/index.js';
 import * as cursor from './adapters/cursor/index.js';
+import { annotateRuntime } from './runtime.js';
 
 /** Registered adapters. */
 export const ADAPTERS = [claudeCode, codex, hermes, opencode, cursor];
@@ -87,6 +88,17 @@ export async function scan(opts = {}) {
     warnings.push(...(adapter.scanWarnings?.() ?? []));
   }
 
+  // Runtime evidence, attached to the refs so toIndexEntry, the MCP and the
+  // server all read the same answer. Adapters opt in with `activity(ref, ctx)`;
+  // the external links registry is read once per scan.
+  const actCtx = { cache: new Map(), now: Date.now() };
+  for (const ref of all) {
+    const adapter = ADAPTERS.find((a) => a.name === ref.adapter);
+    const act = adapter?.activity ? await adapter.activity(ref, actCtx) : null;
+    if (act) ref.activity = act;
+  }
+  warnings.push(...(await annotateRuntime(all)));
+
   let runs = all;
   if (opts.project) {
     const p = resolve(opts.project);
@@ -134,7 +146,17 @@ export function toIndexEntry(ref, now = Date.now()) {
     startedAt: ref.startedAt ?? null,
     modifiedAt: ref.modifiedAt,
     sizeBytes: ref.sizeBytes,
-    active: now - Date.parse(ref.modifiedAt) < ACTIVE_WINDOW_MS,
+    // Runtime evidence wins over recency. A run with no evidence (no journal,
+    // no link) keeps the legacy recency badge; a run WITH evidence is live only
+    // when that evidence says running, so a silent worker is not expired.
+    // A parent is live while its own evidence says so OR a linked child runs.
+    active: ref.activity || ref.linkedRunning
+      ? ref.activity?.state === 'running' || Boolean(ref.linkedRunning)
+      : now - Date.parse(ref.modifiedAt) < ACTIVE_WINDOW_MS,
+    ...(ref.activity || ref.linkedRunning
+      ? { activity: { state: ref.linkedRunning ? 'running' : ref.activity.state, source: ref.linkedRunning ? 'linked-child' : ref.activity.source, ...(ref.activity?.reason && !ref.linkedRunning ? { reason: ref.activity.reason } : {}) } }
+      : {}),
+    ...(ref.parentRunId ? { parentRunId: ref.parentRunId } : {}),
     // A run is loose when its project is not a real place to stand: the
     // adapter gave it a group *label* rather than a path ('✦ Hermes tasks',
     // '(unknown project)'), its project is the home directory (nobody's

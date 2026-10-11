@@ -27,6 +27,8 @@ concurrency:
 
 jobs:
   build:
+    # Downstream private copies never publish the upstream demo site.
+    if: github.repository == 'fayzan123/rungraph'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

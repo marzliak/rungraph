@@ -283,6 +283,7 @@ async function refFromRow(db, row, dbPath, profile, dirExists, activeFilter, act
     sessionId: row.id,
     profile: typeof row.profile_name === 'string' && row.profile_name ? row.profile_name : profile,
     cwd,
+    ...(typeof row.model === 'string' && row.model ? { model: row.model } : {}),
     source: typeof row.source === 'string' ? row.source : '',
     // The whole delegation tree's message total — the fingerprint half that
     // moves while subagents write. Display size stays the session's own.

@@ -114,6 +114,8 @@ export async function parse(ref, opts = {}) {
       details,
       collect,
       q,
+      rootId: ref.sessionId,
+      historyAnchor: null,
       seen: new Set([ref.sessionId]),
       // `records` is this adapter's coverage unit: rows WALKED. Adapter-defined
       // and never compared across adapters — a row is not a JSONL line.
@@ -205,12 +207,19 @@ function makeQueries(db) {
   const inactiveStmt = mHave.has('active')
     ? db.prepare('SELECT COUNT(*) AS c FROM messages WHERE session_id = ? AND active = 0')
     : null;
+  // Rows Hermes compacted out of context. Provenance only — a compacted row is
+  // history the agent no longer sees, which is NOT a user rewind.
+  const compactedStmt =
+    mHave.has('active') && mHave.has('compacted')
+      ? db.prepare('SELECT COUNT(*) AS c FROM messages WHERE session_id = ? AND active = 0 AND compacted = 1')
+      : null;
 
   return {
     session: (id) => sessionStmt.get(id) ?? null,
     messages: (id) => messagesStmt.all(id),
     children: (id) => (childrenStmt ? childrenStmt.all(id) : []),
     inactiveCount: (id) => (inactiveStmt ? num(inactiveStmt.get(id)?.c) : 0),
+    compactedCount: (id) => (compactedStmt ? num(compactedStmt.get(id)?.c) : 0),
   };
 }
 
@@ -879,7 +888,10 @@ function materializeChildren(ctx, walker, parentSessionId, parentLive, depth) {
     if (ms != null) node.durationMs = ms;
     ctx.g.nodes.push(node);
 
-    const spawnFrom = slot?.fromNodeId ?? walker.turnAt(child.started_at);
+    // A dispatch that was compacted out of context leaves no ACTIVE turn to
+    // hang the spawn on. Anchor it to one visible metadata root instead of
+    // dropping the edge — the child is real, only its dispatch is history.
+    const spawnFrom = slot?.fromNodeId ?? historyAnchor(ctx);
     walker.edge('spawn', spawnFrom, agentId, {
       ...(slot?.goal ? { label: snippet(slot.goal, 90) } : {}),
     });
@@ -915,6 +927,27 @@ function materializeChildren(ctx, walker, parentSessionId, parentLive, depth) {
     // Children of children work the same way.
     materializeChildren(ctx, childWalker, child.id, childLive, depth + 1);
   }
+}
+
+/**
+ * The run's single history anchor: a metadata root with no sequence edges, so
+ * it carries spawn edges to children whose dispatch is no longer in context.
+ * Its provenance says what happened to the dispatch (compacted out of context
+ * vs. inactive for another reason) — it is never presented as a rewind.
+ */
+function historyAnchor(ctx) {
+  if (ctx.historyAnchor) return ctx.historyAnchor;
+  const compacted = ctx.q.compactedCount(ctx.rootId) > 0;
+  ctx.g.nodes.push({
+    id: 'hist',
+    kind: 'turn',
+    label: compacted ? 'earlier history (compacted from context)' : 'earlier history (not in active context)',
+    status: 'completed',
+    hasDetail: false,
+    ext: { hermes: { provenance: compacted ? 'compacted-history' : 'inactive-history' } },
+  });
+  ctx.historyAnchor = 'hist';
+  return 'hist';
 }
 
 /**

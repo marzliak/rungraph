@@ -41,6 +41,16 @@ import {
   unknownTypeSummary,
 } from '../../src/coverage.js';
 import { stateAt, timeAtCursor } from '../../src/timeline.js';
+import {
+  entryBadge,
+  familySummary,
+  isLiveEntry,
+  isLiveRuntime,
+  parentLinkOf,
+  resolveRuntime,
+  runtimeBadge,
+  runtimeOfMeta,
+} from './runtime.js';
 
 // One shared empty list for "nothing yet" (no timeline, no signals), so the
 // memos keyed on it see one identity from render to render, not a fresh `[]`.
@@ -106,6 +116,7 @@ export function App() {
   const seenHigh = useRef(new Set()); // `high` signal ids the user has looked at
   const primed = useRef(false); // has this run's baseline been taken yet
   const graphRef = useRef(null); // the SSE closure outlives every graph it sees
+  const indexLoad = useRef(null); // the index refresh, callable from the SSE closure
   // The coverage verdict, sticky per runId. Lives here rather than in the
   // Canvas because the graph does, and neither this component nor the Canvas
   // is remounted on a run switch — see the caveat computed below.
@@ -179,6 +190,7 @@ export function App() {
     let alive = true;
     const load = () =>
       fetchIndex().then((d) => alive && setIndex(d)).catch(() => {});
+    indexLoad.current = load;
     load();
     // Static embed: the baked index cannot change, so polling it is noise.
     const t = EMBED ? null : setInterval(load, 15000);
@@ -240,6 +252,14 @@ export function App() {
           applyPendingFocus(graphRef.current);
           return;
         }
+        // A runtime transition (running → completed, a child started) must reach
+        // the header and picker at once, not on the next 15 s index poll. Only a
+        // change of state refreshes the index — a delta carries meta on every tick.
+        if (msg.type === 'delta' && msg.meta?.ext?.runtime) {
+          const before = runtimeOfMeta(graphRef.current?.meta)?.state ?? null;
+          const after = runtimeOfMeta(msg.meta)?.state ?? null;
+          if (before !== after) indexLoad.current?.();
+        }
         setGraph((cur) => applyDelta(cur, msg));
       },
       (ok) => alive && setConnected(ok),
@@ -264,7 +284,16 @@ export function App() {
     () => index?.runs?.find((r) => r.runId === runId),
     [index, runId],
   );
-  const live = currentRun?.active ?? false;
+  // What the open run is doing, from the proven runtime (index entry, else the
+  // graph's own runtime block). Never inferred from recency alone.
+  const runtime = useMemo(() => resolveRuntime(currentRun, graph?.meta), [currentRun, graph]);
+  const hdrBadge = runtimeBadge(runtime);
+  const familyLine = graph ? familySummary(runtime, graph.nodes) : null;
+  const listedIds = useMemo(() => new Set((index?.runs ?? []).map((r) => r.runId)), [index]);
+  const parentLink = currentRun ? parentLinkOf(currentRun, listedIds) : null;
+  // `live` drives follow and the camera. A proven runtime decides it; a legacy
+  // entry without one keeps today's behaviour, but its badge still reads recent.
+  const live = runtime?.proven ? isLiveRuntime(runtime) : (currentRun?.active ?? false);
   // Paths are stored as the adapter observed them; only the display is relative,
   // and the project root comes from the index entry — IR meta does not carry one.
   const project = currentRun?.project;
@@ -963,6 +992,21 @@ export function App() {
             {adapterName(graph.meta.adapter)}
           </span>
         )}
+        {familyLine && (
+          <span class="family-line" title="principal model · linked children · running children">
+            {familyLine}
+          </span>
+        )}
+        {parentLink?.kind === 'listed' && (
+          <button class="ghost parent-link" onClick={() => selectRun(parentLink.runId)} title="open the run that started this one">
+            ↑ parent
+          </button>
+        )}
+        {parentLink?.kind === 'unavailable' && (
+          <span class="microlabel" title={`parent ${parentLink.runId} is not listed on this dashboard`}>
+            parent not listed here
+          </span>
+        )}
         {currentRun?.provenance && (
           <span
             class="badge-shared"
@@ -971,7 +1015,15 @@ export function App() {
             shared by {currentRun.provenance.sharedBy}
           </span>
         )}
-        {live && connected && <span class="badge-live">live</span>}
+        {hdrBadge && (hdrBadge.tone !== 'live' || connected) && (
+          <span
+            class={hdrBadge.tone === 'live' ? 'badge-live' : 'badge-runtime'}
+            data-tone={hdrBadge.tone}
+            title={RUNTIME_TITLE[hdrBadge.tone]}
+          >
+            {hdrBadge.label}
+          </span>
+        )}
         {runId && !connected && <span class="microlabel">reconnecting…</span>}
         {currentRun?.resume && (
           <button
@@ -1156,6 +1208,7 @@ export function App() {
           graph={graph}
           open={panes.right}
           runId={runId}
+          listedIds={listedIds}
           project={project}
           selection={selection}
           focus={focus}
@@ -1362,8 +1415,8 @@ function Picker({ index, runId, onSelect, onResume }) {
   // The grouping opinion lives in picker-groups.js (bundle keying, the loose
   // bucket, case merging, recency order, the filter, the counts); this
   // component only renders its output.
-  const groups = groupRuns(index.runs, { filter, query });
-  const chips = adapterChips(index.runs);
+  const groups = groupRuns(index.runs, { filter, query, isLive: isLiveEntry });
+  const chips = adapterChips(index.runs, { isLive: isLiveEntry });
   const searching = query.trim().length > 0;
 
   // The first group is the project worked in most recently. It and the
@@ -1519,7 +1572,7 @@ function Picker({ index, runId, onSelect, onResume }) {
                           {r.kind === 'workflow' ? 'wf' : 'session'}
                         </span>
                         <span>{timeAgo(r.modifiedAt)}</span>
-                        {r.active && <span class="live">● live</span>}
+                        <RuntimeTag run={r} />
                         {r.provenance && (
                           <span
                             class="provenance"
@@ -1563,6 +1616,28 @@ function Picker({ index, runId, onSelect, onResume }) {
         />
       )}
     </aside>
+  );
+}
+
+// Titles for the header badge, by tone. Recent is the honest word for legacy
+// recency: the dashboard does not know the run is executing.
+const RUNTIME_TITLE = {
+  live: 'proven executing — the server confirmed activity',
+  failed: 'the run ended with an error',
+  recent: 'recently modified; this adapter cannot prove it is still running',
+  unknown: 'runtime telemetry is missing or inconsistent',
+};
+
+// A picker row's runtime tag, from the one rule in runtime.js. Proven-finished
+// runs carry no tag, so the list stays quiet about the ordinary case.
+function RuntimeTag({ run }) {
+  const b = entryBadge(run);
+  if (!b) return null;
+  return (
+    <span class={b.tone === 'live' ? 'live rt-tag' : 'rt-tag'} data-tone={b.tone} title={RUNTIME_TITLE[b.tone]}>
+      {b.tone === 'live' ? '● ' : ''}
+      {b.label}
+    </span>
   );
 }
 
