@@ -5,7 +5,7 @@
 [![CI](https://github.com/marzliak/rungraph/actions/workflows/ci.yml/badge.svg?branch=homolog)](https://github.com/marzliak/rungraph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Quick start](#quick-start) · [Setup and limits](docs/HERMES_FAMILIES.md) · [Português](docs/README.pt-BR.md) · [Share this project](docs/SHARE.md)
+[Quick start](#quick-start) · [Setup and limits](docs/HERMES_FAMILIES.md) · [Share this project](docs/SHARE.md)
 
 Your Hermes agent launches several Claude Code workers. They do the work, but
 independent run entries don't tell you which parent launched them. You end up
@@ -93,7 +93,7 @@ or private registry files. A useful report names the versions, expected behavior
 and a sanitized example.
 
 If this solves a problem for you, **star the repo** so you can find it again.
-[Short English and Portuguese descriptions](docs/SHARE.md) are ready to share.
+[Short descriptions](docs/SHARE.md) are ready to share.
 
 ## Built on RunGraph
 
